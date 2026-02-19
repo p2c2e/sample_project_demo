@@ -112,6 +112,58 @@ The `otel_setup.py` module:
 
 The manual spans (`process-item`, `enrich-user`, `build-order`) show how to add custom instrumentation when you need finer-grained visibility beyond automatic HTTP spans.
 
+## Alternative: Zero-Code Instrumentation (no programmatic setup)
+
+Instead of the `otel_setup.py` approach, you can use the `opentelemetry-instrument` CLI wrapper.
+This requires **no OTel code in your app at all** -- the wrapper patches Flask and requests at startup.
+
+To use this approach, comment out the `otel_setup` lines in `main.py` and `backend_service.py`:
+
+```python
+# from otel_setup import init_telemetry
+# init_telemetry("api-gateway", app)
+```
+
+Then start each service with the `opentelemetry-instrument` wrapper:
+
+Backend (terminal 1):
+
+```bash
+OTEL_SERVICE_NAME=backend-service \
+OTEL_TRACES_EXPORTER=otlp \
+OTEL_METRICS_EXPORTER=none \
+OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 \
+OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf \
+uv run opentelemetry-instrument \
+    flask --app backend_service:app run --port 5002
+```
+
+API gateway (terminal 2):
+
+```bash
+OTEL_SERVICE_NAME=api-gateway \
+OTEL_TRACES_EXPORTER=otlp \
+OTEL_METRICS_EXPORTER=none \
+OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 \
+OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf \
+uv run opentelemetry-instrument \
+    flask --app main:app run --port 5001
+```
+
+All configuration is via environment variables -- no Python code changes needed.
+Manual spans (like `process-item`, `enrich-user`, `build-order`) still work because
+they use the `opentelemetry.trace` API, which the CLI wrapper also sets up.
+
+### Programmatic vs Zero-Code comparison
+
+| | Programmatic (`otel_setup.py`) | Zero-Code (`opentelemetry-instrument`) |
+|---|---|---|
+| Code changes needed | 2 lines per service file | None (comment out otel_setup lines) |
+| Configuration | In Python code + env vars | Entirely via env vars |
+| Run command | `uv run flask --app ...` | `uv run opentelemetry-instrument flask --app ...` |
+| Custom spans | Yes (works with both) | Yes (works with both) |
+| Best for | Production apps, fine-grained control | Quick prototyping, minimal setup |
+
 ## Configuration
 
 The OTLP endpoint defaults to `http://localhost:4318` but can be overridden via the `OTEL_EXPORTER_OTLP_ENDPOINT` environment variable.
@@ -122,3 +174,37 @@ If traces don't appear in Jaeger:
 - Ensure `OTEL_SDK_DISABLED` is NOT set to `true` in your environment
 - Verify Jaeger is running: `curl http://localhost:4318/v1/traces -X POST -H "Content-Type: application/json" -d '{}'` should return `{"partialSuccess":{}}`
 - Refresh the Jaeger UI page after generating traces (the service list loads on page load)
+
+## Beyond Flask: opentelemetry-instrument is framework-agnostic
+
+The `opentelemetry-instrument` CLI wrapper is not Flask-specific. It auto-detects **any** installed
+`opentelemetry-instrumentation-*` packages and patches the corresponding libraries at startup.
+
+Supported libraries include:
+
+- **Web frameworks**: Django, FastAPI, Starlette, Tornado, Falcon, aiohttp
+- **DB clients**: psycopg2, SQLAlchemy, pymysql, pymongo, redis
+- **HTTP clients**: requests, urllib3, httpx, aiohttp-client
+- **Messaging**: celery, kafka-python, pika (RabbitMQ)
+- **gRPC**: grpcio
+- **Others**: boto3 (AWS SDK), elasticsearch, jinja2, logging
+
+The pattern is always the same:
+
+```bash
+# 1. Install the instrumentation package for your library
+uv add opentelemetry-instrumentation-django   # or fastapi, sqlalchemy, etc.
+
+# 2. Run your app with the wrapper
+OTEL_SERVICE_NAME=my-service \
+OTEL_TRACES_EXPORTER=otlp \
+OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 \
+OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf \
+uv run opentelemetry-instrument python my_app.py
+```
+
+To discover which instrumentations are available for your currently installed packages:
+
+```bash
+uv run opentelemetry-bootstrap --action=requirements
+```
