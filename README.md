@@ -1,26 +1,35 @@
 # Flask + OpenTelemetry Cross-Service Tracing Demo
 
-Two Flask services with programmatic OpenTelemetry instrumentation, using Jaeger to visualize distributed traces across service boundaries.
+Two Flask services and a Node.js UI app with OpenTelemetry instrumentation, using Jaeger to visualize distributed traces across service boundaries.
 
 ## Architecture
 
 ```
-Client  -->  api-gateway (main.py :5001)  -->  backend-service (backend_service.py :5002)
-               /order/<id>                        /users/<id>
+Browser  -->  ui-app (Express :3000)  -->  api-gateway (Flask :5001)  -->  backend-service (Flask :5002)
+                /api/order/:id               /order/<id>                      /users/<id>
+                        \                          \                              \
+                         `--- OTLP HTTP (:4318) --> Jaeger UI (:16686) <----------'
 ```
 
 ## Prerequisites
 
 - Python 3.12+
 - [uv](https://docs.astral.sh/uv/) package manager
+- Node.js 18+
 - Docker (for Jaeger)
 
 ## Setup
 
-Install dependencies:
+Install Python dependencies:
 
 ```bash
 uv sync
+```
+
+Install Node.js dependencies:
+
+```bash
+cd ui-app && npm install
 ```
 
 ## Running
@@ -51,26 +60,42 @@ uv run flask --app main:app run --port 5001
 
 Telemetry is configured programmatically via `otel_setup.py` -- each service calls `init_telemetry()` at import time, which sets up the OTLP exporter and instruments Flask + requests.
 
-### Step 4: Generate some traces
+### Step 4: Start the UI app (terminal 3)
 
 ```bash
-# Single-service traces
+cd ui-app && npm start
+```
+
+### Step 5: Generate traces via the UI
+
+Open http://localhost:3000 in your browser. Click buttons to invoke each endpoint. Each request flows through ui-app -> api-gateway (-> backend-service for `/order` endpoints).
+
+Alternatively, you can still use curl directly:
+
+```bash
 curl http://localhost:5001/items
 curl http://localhost:5001/items/1
-
-# Cross-service trace (this is the interesting one)
 curl http://localhost:5001/order/1
 ```
 
-### Step 5: View traces in Jaeger
+### Step 6: View traces in Jaeger
 
 Open http://localhost:16686 in your browser.
 
-1. Select service **api-gateway** from the dropdown
+1. Select service **ui-app** (or **api-gateway**) from the dropdown
 2. Click **Find Traces**
-3. Click on the `/order/1` trace to see spans from both services in one waterfall
+3. Click on the `/order/1` trace to see spans from all three services in one waterfall
 
 ## Endpoints
+
+### ui-app (ui-app/app.js, port 3000)
+
+| Endpoint | Proxies To |
+|---|---|
+| `GET /api/health` | api-gateway `GET /` |
+| `GET /api/items` | api-gateway `GET /items` |
+| `GET /api/items/:id` | api-gateway `GET /items/:id` |
+| `GET /api/order/:item_id` | api-gateway `GET /order/:item_id` |
 
 ### api-gateway (main.py, port 5001)
 
@@ -93,16 +118,24 @@ Open http://localhost:16686 in your browser.
 
 - **`GET /items`** -- single-service trace with one Flask handler span
 - **`GET /items/<id>`** -- single-service trace with a child **process-item** span (manual instrumentation)
-- **`GET /order/<id>`** -- cross-service trace showing:
-  1. `api-gateway`: Flask handler span for `/order/<id>`
-  2. `api-gateway`: outgoing HTTP request span to `backend-service`
-  3. `backend-service`: Flask handler span for `/users/<id>`
-  4. `backend-service`: child **enrich-user** span
-  5. `api-gateway`: child **build-order** span
+- **`GET /order/<id>`** (via ui-app) -- three-service trace showing:
+  1. `ui-app`: Express handler span for `/api/order/:item_id`
+  2. `ui-app`: outgoing HTTP request span to `api-gateway`
+  3. `api-gateway`: Flask handler span for `/order/<id>`
+  4. `api-gateway`: outgoing HTTP request span to `backend-service`
+  5. `backend-service`: Flask handler span for `/users/<id>`
+  6. `backend-service`: child **enrich-user** span
+  7. `api-gateway`: child **build-order** span
 
-All five spans appear in a single trace, connected by automatically propagated trace context.
+All spans appear in a single trace, connected by automatically propagated W3C trace context.
 
 ## How it works
+
+### ui-app (Node.js)
+
+The `ui-app/tracing.js` module is loaded via `--require` before `app.js` to ensure HTTP/Express modules are patched before use. It configures `@opentelemetry/sdk-node` with an OTLP HTTP exporter and auto-instrumentations for `http` and `express`. When `app.js` makes `http.get` calls to the api-gateway, the HTTP instrumentation automatically injects `traceparent` headers.
+
+### Python services
 
 The `otel_setup.py` module:
 1. Creates a `TracerProvider` with the service name as a resource attribute

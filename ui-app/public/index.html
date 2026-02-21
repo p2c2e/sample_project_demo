@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>OpenTelemetry Demo - UI</title>
+  <style>
+    body {
+      font-family: monospace;
+      max-width: 800px;
+      margin: 40px auto;
+      padding: 0 20px;
+      background: #f5f5f5;
+    }
+    h1 { font-size: 1.4em; }
+    h2 { font-size: 1.1em; margin-top: 24px; }
+    button {
+      margin: 4px 4px 4px 0;
+      padding: 8px 16px;
+      cursor: pointer;
+      border: 1px solid #999;
+      background: #fff;
+      font-family: monospace;
+    }
+    button:hover { background: #e0e0e0; }
+    #result {
+      background: #1e1e1e;
+      color: #d4d4d4;
+      padding: 16px;
+      margin-top: 16px;
+      min-height: 100px;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      border-radius: 4px;
+    }
+    .status { color: #888; font-size: 0.9em; margin-top: 8px; }
+    a { color: #0066cc; }
+  </style>
+</head>
+<body>
+  <h1>OpenTelemetry Tracing Demo</h1>
+  <p>Each button calls the ui-app server, which proxies to api-gateway.
+     Traces flow: <b>ui-app -&gt; api-gateway -&gt; backend-service</b></p>
+
+  <h2>api-gateway endpoints</h2>
+  <button onclick="callApi('/api/health')">GET /</button>
+  <button onclick="callApi('/api/items')">GET /items</button>
+  <button onclick="callApi('/api/items/1')">GET /items/1</button>
+  <button onclick="callApi('/api/items/2')">GET /items/2</button>
+  <button onclick="callApi('/api/items/3')">GET /items/3</button>
+
+  <h2>Cross-service (api-gateway -&gt; backend-service)</h2>
+  <button onclick="callApi('/api/order/1')">GET /order/1</button>
+  <button onclick="callApi('/api/order/2')">GET /order/2</button>
+  <button onclick="callApi('/api/order/3')">GET /order/3</button>
+
+  <h2>Response</h2>
+  <div id="result">Click a button above to make a request...</div>
+  <div class="status" id="status"></div>
+
+  <p style="margin-top:24px;">
+    View traces in Jaeger:
+    <a href="http://localhost:16686" target="_blank">http://localhost:16686</a>
+    -- look for service <b>ui-app</b>
+  </p>
+
+  <script>
+    function callApi(path) {
+      var resultEl = document.getElementById('result');
+      var statusEl = document.getElementById('status');
+      resultEl.textContent = 'Loading...';
+      statusEl.textContent = 'GET ' + path;
+
+      var startTime = Date.now();
+
+      fetch(path)
+        .then(function (response) {
+          var elapsed = Date.now() - startTime;
+          statusEl.textContent = 'GET ' + path +
+            ' -- ' + response.status + ' ' + response.statusText +
+            ' (' + elapsed + 'ms)';
+          return response.text();
+        })
+        .then(function (text) {
+          try {
+            var obj = JSON.parse(text);
+            resultEl.textContent = JSON.stringify(obj, null, 2);
+          } catch (e) {
+            resultEl.textContent = text;
+          }
+        })
+        .catch(function (err) {
+          resultEl.textContent = 'Error: ' + err.message;
+          statusEl.textContent = 'Request failed';
+        });
+    }
+  </script>
+</body>
+</html>
