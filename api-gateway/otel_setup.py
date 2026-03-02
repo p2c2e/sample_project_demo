@@ -1,3 +1,4 @@
+# NOTE: This file is duplicated in api-gateway/ and backend-service/ -- keep them in sync
 import os
 
 from opentelemetry import trace

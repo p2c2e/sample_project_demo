@@ -1,0 +1,8 @@
+# .sdkmanrc -- SDKMAN configuration
+# Run "sdk env" to auto-switch to these versions
+# See: https://sdkman.io/usage#env
+#
+# This project does not use Java, but this file demonstrates the convention.
+# Uncomment and set versions if adding JVM services:
+# java=21.0.2-tem
+# gradle=8.5

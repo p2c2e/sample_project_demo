@@ -1,11 +1,38 @@
 #!/usr/bin/env bash
 # setup.sh -- Start all services for the OpenTelemetry tracing demo
-# Usage: ./setup.sh
-# Stops everything: ./teardown.sh
+#
+# Usage:
+#   ./setup.sh          # Docker Compose mode (default) -- builds and runs all containers
+#   ./setup.sh --local  # Bare-metal mode -- processes on host, only Jaeger in Docker
+#
+# Stop:  ./teardown.sh  (or ./teardown.sh --local)
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+MODE="docker"
+
+if [ "${1:-}" = "--local" ]; then
+    MODE="local"
+fi
+
+if [ "$MODE" = "docker" ]; then
+    echo "Starting OpenTelemetry tracing demo (Docker Compose mode)..."
+    echo ""
+    docker compose -f "$SCRIPT_DIR/docker-compose.yml" up -d --build
+    echo ""
+    echo "All services started."
+    echo ""
+    echo "  UI app:           http://localhost:3000"
+    echo "  API gateway:      http://localhost:5001"
+    echo "  Backend service:  http://localhost:5002"
+    echo "  Jaeger UI:        http://localhost:16686"
+    echo ""
+    echo "Run ./teardown.sh to stop all services."
+    exit 0
+fi
+
+# --- Local (bare-metal) mode below ---
 PID_DIR="$SCRIPT_DIR/.pids"
 LOG_DIR="$SCRIPT_DIR/.logs"
 
@@ -13,22 +40,17 @@ mkdir -p "$PID_DIR" "$LOG_DIR"
 
 # Check if already running
 if [ -f "$PID_DIR/jaeger.pid" ] || [ -f "$PID_DIR/backend.pid" ] || [ -f "$PID_DIR/gateway.pid" ] || [ -f "$PID_DIR/ui.pid" ]; then
-    echo "ERROR: Services appear to be already running. Run ./teardown.sh first."
+    echo "ERROR: Services appear to be already running. Run ./teardown.sh --local first."
     exit 1
 fi
 
-echo "Starting OpenTelemetry tracing demo..."
+echo "Starting OpenTelemetry tracing demo (local mode)..."
 echo "Logs will be written to $LOG_DIR/"
 echo ""
 
 # --- 1. Jaeger ---
 echo "[1/4] Starting Jaeger..."
-docker run --rm -d \
-    --name otel-demo-jaeger \
-    -p 16686:16686 \
-    -p 4317:4317 \
-    -p 4318:4318 \
-    jaegertracing/all-in-one:latest \
+docker compose -f "$SCRIPT_DIR/docker-compose.yml" up -d jaeger \
     > "$LOG_DIR/jaeger.log" 2>&1
 
 JAEGER_CID=$(docker ps -q --filter name=otel-demo-jaeger)
@@ -50,13 +72,16 @@ done
 
 # --- 2. Backend service ---
 echo "[2/4] Starting backend-service on :5002..."
-cd "$SCRIPT_DIR"
+cd "$SCRIPT_DIR/backend-service"
+uv sync --quiet 2>/dev/null || true
 uv run flask --app backend_service:app run --port 5002 \
     > "$LOG_DIR/backend.log" 2>&1 &
 echo "$!" > "$PID_DIR/backend.pid"
 
 # --- 3. API gateway ---
 echo "[3/4] Starting api-gateway on :5001..."
+cd "$SCRIPT_DIR/api-gateway"
+uv sync --quiet 2>/dev/null || true
 uv run flask --app main:app run --port 5001 \
     > "$LOG_DIR/gateway.log" 2>&1 &
 echo "$!" > "$PID_DIR/gateway.pid"
@@ -78,4 +103,4 @@ echo "  API gateway:      http://localhost:5001"
 echo "  Backend service:  http://localhost:5002"
 echo "  Jaeger UI:        http://localhost:16686"
 echo ""
-echo "Run ./teardown.sh to stop all services."
+echo "Run ./teardown.sh --local to stop all services."

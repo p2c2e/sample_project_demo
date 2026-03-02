@@ -1,0 +1,59 @@
+# docker-compose.yml -- Full stack for the OpenTelemetry tracing demo
+#
+# Usage:
+#   docker compose up -d          # Start all services
+#   docker compose up -d jaeger   # Start only Jaeger (for local dev)
+#   docker compose down            # Stop everything
+#   docker compose logs -f         # Tail logs
+
+services:
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    container_name: otel-demo-jaeger
+    ports:
+      - "16686:16686"   # Jaeger UI
+      - "4317:4317"     # OTLP gRPC receiver
+      - "4318:4318"     # OTLP HTTP receiver
+    restart: unless-stopped
+
+  backend-service:
+    build:
+      context: ./backend-service
+    container_name: otel-demo-backend
+    ports:
+      - "5002:5002"
+    environment:
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4318
+    depends_on:
+      - jaeger
+    restart: unless-stopped
+
+  api-gateway:
+    build:
+      context: ./api-gateway
+    container_name: otel-demo-gateway
+    ports:
+      - "5001:5001"
+    environment:
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4318
+      - BACKEND_SERVICE_URL=http://backend-service:5002
+    depends_on:
+      - jaeger
+      - backend-service
+    restart: unless-stopped
+
+  ui-app:
+    build:
+      context: ./ui-app
+    container_name: otel-demo-ui
+    ports:
+      - "3000:3000"
+    environment:
+      - OTEL_SERVICE_NAME=ui-app
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4318
+      - API_GATEWAY_URL=http://api-gateway:5001
+      - UI_APP_PORT=3000
+    depends_on:
+      - jaeger
+      - api-gateway
+    restart: unless-stopped

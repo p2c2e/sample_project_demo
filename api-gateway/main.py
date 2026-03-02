@@ -1,3 +1,4 @@
+import os
 import time
 import random
 
@@ -11,6 +12,8 @@ app = Flask(__name__)
 init_telemetry("api-gateway", app)
 
 tracer = trace.get_tracer(__name__)
+
+BACKEND_SERVICE_URL = os.environ.get("BACKEND_SERVICE_URL", "http://localhost:5002")
 
 ITEMS = [
     {"id": 1, "name": "Widget A", "price": 9.99},
@@ -62,7 +65,7 @@ def create_order(item_id):
         return jsonify({"error": "item not found"}), 404
 
     # Call the backend service for user info (trace context propagates automatically)
-    user_resp = http_requests.get("http://127.0.0.1:5002/users/1")
+    user_resp = http_requests.get(BACKEND_SERVICE_URL + "/users/1")
     if user_resp.status_code != 200:
         return jsonify({"error": "failed to fetch user"}), 502
 
