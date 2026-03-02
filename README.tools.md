@@ -181,6 +181,10 @@ Why:
 
 This project includes a `CLAUDE.md` file that provides context to Claude Code (the AI coding assistant). See [README.claude.md](README.claude.md) for details on using Claude Code effectively with this project.
 
+## Windows Users
+
+If you are developing on Windows, see [README.windows.md](README.windows.md) for a complete setup guide covering WSL, Rancher Desktop, VSCode with WSL integration, Docker CLI, Python, Node.js, and all other tooling. All development happens inside WSL -- the Windows guide walks you through everything from scratch.
+
 ## Summary: Convention Files
 
 | File | Tool | Purpose |
